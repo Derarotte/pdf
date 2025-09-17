@@ -220,6 +220,7 @@ showpage
 
 func main() {
 	myApp := app.New()
+	myApp.Settings().SetTheme(newChineseTheme())
 	myApp.SetIcon(nil)
 
 	myWindow := myApp.NewWindow("PDF矢量图提取工具 v1.0")
