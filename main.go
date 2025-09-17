@@ -219,8 +219,10 @@ showpage
 
 
 func main() {
+	// 初始化中文字体支持，解决乱码问题
+	initChineseFont()
+
 	myApp := app.New()
-	myApp.Settings().SetTheme(newChineseTheme())
 	myApp.SetIcon(nil)
 
 	myWindow := myApp.NewWindow("PDF矢量图提取工具 v1.0")
