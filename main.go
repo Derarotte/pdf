@@ -47,22 +47,57 @@ func (pe *PDFExtractor) ExtractVectorFromPDF(pdfPath string) (image.Image, error
 
 // 处理目录中的所有PDF文件
 func (pe *PDFExtractor) ProcessDirectory() error {
-	files, err := filepath.Glob(filepath.Join(pe.config.InputDir, "*.pdf"))
-	if err != nil {
-		return fmt.Errorf("扫描PDF文件失败: %v", err)
+	// 检查目录是否存在
+	if _, err := os.Stat(pe.config.InputDir); os.IsNotExist(err) {
+		return fmt.Errorf("输入目录不存在: %s", pe.config.InputDir)
+	}
+
+	// 扫描PDF文件，支持大小写不敏感
+	var files []string
+
+	// 尝试小写 .pdf
+	pdfFiles, err := filepath.Glob(filepath.Join(pe.config.InputDir, "*.pdf"))
+	if err == nil {
+		files = append(files, pdfFiles...)
+	}
+
+	// 尝试大写 .PDF
+	PDFFiles, err := filepath.Glob(filepath.Join(pe.config.InputDir, "*.PDF"))
+	if err == nil {
+		files = append(files, PDFFiles...)
+	}
+
+	// 手动扫描目录，以防Glob有问题
+	if len(files) == 0 {
+		dirEntries, err := os.ReadDir(pe.config.InputDir)
+		if err != nil {
+			return fmt.Errorf("无法读取目录 %s: %v", pe.config.InputDir, err)
+		}
+
+		for _, entry := range dirEntries {
+			if !entry.IsDir() {
+				name := entry.Name()
+				nameLower := strings.ToLower(name)
+				if strings.HasSuffix(nameLower, ".pdf") {
+					files = append(files, filepath.Join(pe.config.InputDir, name))
+				}
+			}
+		}
 	}
 
 	if len(files) == 0 {
-		return fmt.Errorf("目录中没有找到PDF文件")
+		return fmt.Errorf("目录 %s 中没有找到PDF文件\n请检查：\n1. 目录是否包含PDF文件\n2. 文件扩展名是否为.pdf或.PDF", pe.config.InputDir)
 	}
+
+	log.Printf("找到 %d 个PDF文件", len(files))
 
 	// 按文件名排序
 	sort.Strings(files)
 
 	var extractedImages []image.Image
 
-	for _, file := range files {
-		fmt.Printf("处理文件: %s\n", filepath.Base(file))
+	for i, file := range files {
+		log.Printf("处理文件 (%d/%d): %s", i+1, len(files), filepath.Base(file))
 
 		// 提取矢量图
 		img, err := pe.ExtractVectorFromPDF(file)
@@ -352,6 +387,10 @@ func main() {
 
 		go func() {
 			extractor := NewPDFExtractor(config)
+
+			// 首先检查目录和文件
+			statusLabel.SetText("正在扫描PDF文件...")
+
 			err := extractor.ProcessDirectory()
 
 			// 在主线程更新UI
