@@ -5,15 +5,17 @@ import (
 	"image"
 	"image/color"
 	"os"
+	"path/filepath"
 	"strings"
+	"time"
 )
 
 // SVG输出模块
 func (pe *PDFExtractor) saveSVG(img image.Image) error {
-	outputPath := pe.config.OutputPath
-	if !strings.HasSuffix(outputPath, ".svg") {
-		outputPath += ".svg"
-	}
+	// 生成带时间戳的文件名
+	timestamp := time.Now().Format("20060102_150405")
+	filename := fmt.Sprintf("PDF拼接结果_%s.svg", timestamp)
+	outputPath := filepath.Join(pe.config.OutputPath, filename)
 
 	bounds := img.Bounds()
 	width := bounds.Dx()

@@ -12,6 +12,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"time"
 
 	"fyne.io/fyne/v2/app"
 	"fyne.io/fyne/v2/container"
@@ -134,10 +135,10 @@ func (pe *PDFExtractor) SaveResult(img image.Image) error {
 }
 
 func (pe *PDFExtractor) savePNG(img image.Image) error {
-	outputPath := pe.config.OutputPath
-	if !strings.HasSuffix(outputPath, ".png") {
-		outputPath += ".png"
-	}
+	// 生成带时间戳的文件名
+	timestamp := time.Now().Format("20060102_150405")
+	filename := fmt.Sprintf("PDF拼接结果_%s.png", timestamp)
+	outputPath := filepath.Join(pe.config.OutputPath, filename)
 
 	file, err := os.Create(outputPath)
 	if err != nil {
@@ -150,10 +151,10 @@ func (pe *PDFExtractor) savePNG(img image.Image) error {
 
 // 保存为AI格式 (Adobe Illustrator)
 func (pe *PDFExtractor) saveAI(img image.Image) error {
-	outputPath := pe.config.OutputPath
-	if !strings.HasSuffix(outputPath, ".ai") {
-		outputPath += ".ai"
-	}
+	// 生成带时间戳的文件名
+	timestamp := time.Now().Format("20060102_150405")
+	filename := fmt.Sprintf("PDF拼接结果_%s.ai", timestamp)
+	outputPath := filepath.Join(pe.config.OutputPath, filename)
 
 	// AI格式实际上是PostScript格式
 	// 这里实现一个简化的AI文件
@@ -241,6 +242,15 @@ func main() {
 	inputDirEntry := widget.NewEntry()
 	inputDirEntry.SetPlaceHolder("请选择包含PDF文件的目录路径...")
 
+	// 获取桌面路径
+	getDesktopPath := func() string {
+		homeDir, err := os.UserHomeDir()
+		if err != nil {
+			return ""
+		}
+		return filepath.Join(homeDir, "Desktop")
+	}
+
 	selectDirBtn := widget.NewButton("选择目录", func() {
 		dialog.ShowFolderOpen(func(list fyne.ListableURI, err error) {
 			if err != nil {
@@ -255,23 +265,40 @@ func main() {
 		}, myWindow)
 	})
 
-	outputPathLabel := widget.NewLabel("输出文件:")
-	outputPathEntry := widget.NewEntry()
-	outputPathEntry.SetPlaceHolder("请选择拼接后的输出文件保存路径...")
+	// 桌面快捷按钮
+	desktopBtn := widget.NewButton("桌面", func() {
+		desktopPath := getDesktopPath()
+		if desktopPath != "" {
+			config.InputDir = desktopPath
+			inputDirEntry.SetText(desktopPath)
+		}
+	})
 
-	selectOutputBtn := widget.NewButton("选择输出", func() {
-		dialog.ShowFileSave(func(writer fyne.URIWriteCloser, err error) {
+	outputPathLabel := widget.NewLabel("输出文件夹:")
+	outputPathEntry := widget.NewEntry()
+	outputPathEntry.SetPlaceHolder("请选择输出文件夹，拼接后的图片将保存在此...")
+
+	selectOutputBtn := widget.NewButton("选择输出文件夹", func() {
+		dialog.ShowFolderOpen(func(folder fyne.ListableURI, err error) {
 			if err != nil {
 				dialog.ShowError(err, myWindow)
 				return
 			}
-			if writer == nil {
+			if folder == nil {
 				return
 			}
-			config.OutputPath = writer.URI().Path()
-			outputPathEntry.SetText(writer.URI().Path())
-			writer.Close()
+			config.OutputPath = folder.Path()
+			outputPathEntry.SetText(folder.Path())
 		}, myWindow)
+	})
+
+	// 输出到桌面快捷按钮
+	outputDesktopBtn := widget.NewButton("桌面", func() {
+		desktopPath := getDesktopPath()
+		if desktopPath != "" {
+			config.OutputPath = desktopPath
+			outputPathEntry.SetText(desktopPath)
+		}
 	})
 
 	// 参数配置
@@ -299,34 +326,58 @@ func main() {
 	})
 	outputTypeSelect.SetSelected("PNG")
 
+	// 状态标签和进度条
+	statusLabel := widget.NewLabel("就绪")
+	progressBar := widget.NewProgressBarInfinite()
+	progressBar.Hide()
+
 	// 处理按钮
-	processBtn := widget.NewButton("开始处理", func() {
+	var processBtn *widget.Button
+	processBtn = widget.NewButton("开始处理", func() {
 		if config.InputDir == "" {
 			dialog.ShowError(fmt.Errorf("请选择输入目录"), myWindow)
 			return
 		}
 		if config.OutputPath == "" {
-			dialog.ShowError(fmt.Errorf("请选择输出文件"), myWindow)
+			dialog.ShowError(fmt.Errorf("请选择输出文件夹"), myWindow)
 			return
 		}
 
-		extractor := NewPDFExtractor(config)
-		err := extractor.ProcessDirectory()
-		if err != nil {
-			dialog.ShowError(err, myWindow)
-		} else {
-			dialog.ShowInformation("成功", "处理完成！", myWindow)
-		}
+		// 异步处理，避免界面卡顿
+		processBtn.SetText("处理中...")
+		processBtn.Disable()
+		statusLabel.SetText("正在处理PDF文件...")
+		progressBar.Show()
+		progressBar.Start()
+
+		go func() {
+			extractor := NewPDFExtractor(config)
+			err := extractor.ProcessDirectory()
+
+			// 在主线程更新UI
+			processBtn.SetText("开始处理")
+			processBtn.Enable()
+			progressBar.Stop()
+			progressBar.Hide()
+
+			if err != nil {
+				statusLabel.SetText("处理失败")
+				dialog.ShowError(err, myWindow)
+			} else {
+				statusLabel.SetText("处理完成")
+				dialog.ShowInformation("成功", "拼接完成！文件已保存到输出文件夹。", myWindow)
+			}
+		}()
 	})
 
 	// 布局
 	content := container.NewVBox(
 		inputDirLabel,
-		container.NewBorder(nil, nil, nil, selectDirBtn, inputDirEntry),
+		container.NewBorder(nil, nil, desktopBtn, selectDirBtn, inputDirEntry),
 		widget.NewSeparator(),
 
 		outputPathLabel,
-		container.NewBorder(nil, nil, nil, selectOutputBtn, outputPathEntry),
+		container.NewBorder(nil, nil, outputDesktopBtn, selectOutputBtn, outputPathEntry),
 		widget.NewSeparator(),
 
 		container.NewGridWithColumns(2,
@@ -336,6 +387,8 @@ func main() {
 		),
 		widget.NewSeparator(),
 
+		statusLabel,
+		progressBar,
 		processBtn,
 	)
 

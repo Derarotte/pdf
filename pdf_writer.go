@@ -6,15 +6,16 @@ import (
 	"image"
 	"image/png"
 	"os"
-	"strings"
+	"path/filepath"
+	"time"
 )
 
 // 简化的PDF输出模块
 func (pe *PDFExtractor) savePDF(img image.Image) error {
-	outputPath := pe.config.OutputPath
-	if !strings.HasSuffix(outputPath, ".pdf") {
-		outputPath += ".pdf"
-	}
+	// 生成带时间戳的文件名
+	timestamp := time.Now().Format("20060102_150405")
+	filename := fmt.Sprintf("PDF拼接结果_%s.pdf", timestamp)
+	outputPath := filepath.Join(pe.config.OutputPath, filename)
 
 	// 这里使用一个简化的PDF生成
 	// 实际项目中建议使用专业的PDF生成库如 gofpdf
